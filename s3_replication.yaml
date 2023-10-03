@@ -1,0 +1,99 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Monitor S3 Replication using CloudWatch and SNS with dynamic bucket list from GitHub
+
+Resources:
+
+  ReplicationAlertSNSTopic:
+    Type: 'AWS::SNS::Topic'
+    Properties:
+      DisplayName: ReplicationAlert
+      TopicName: ReplicationAlert
+
+  ReplicationAlertSNSEmailSubscription:
+    Type: 'AWS::SNS::Subscription'
+    Properties:
+      Protocol: email
+      Endpoint: your-email@example.com
+      TopicArn: !Ref ReplicationAlertSNSTopic
+
+  ReplicationAlarmLambdaRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CWAndS3Policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricAlarm
+                  - s3:ListBuckets
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ec2:CreateNetworkInterface
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DeleteNetworkInterface
+                Resource: '*'
+
+  RequestsLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: requests-layer
+      Description: Python requests library
+      ContentUri: https://github.com/keithrozario/Klayers/blob/master/deployments/python3.8/arns/us-west-2.csv?raw=true
+      CompatibleRuntimes:
+        - python3.8
+
+  CreateReplicationAlarmsFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt ReplicationAlarmLambdaRole.Arn
+      Runtime: python3.8
+      Layers:
+        - !Ref RequestsLayer
+      Code:
+        ZipFile: |
+          import boto3
+          import requests
+
+          def handler(event, context):
+              s3 = boto3.client('s3')
+              cw = boto3.client('cloudwatch')
+              
+              # Fetch the list of buckets from GitHub
+              github_url = "https://raw.githubusercontent.com/your-username/your-repo/master/path-to-your-file.txt"
+              response = requests.get(github_url)
+              buckets = response.text.splitlines()
+              
+              for bucket in buckets:
+                  cw.put_metric_alarm(
+                      AlarmName=f'{bucket}ReplicationAlarm',
+                      Namespace='AWS/S3',
+                      MetricName='BytesPendingReplication',
+                      Dimensions=[
+                          {'Name': 'BucketName', 'Value': bucket},
+                          {'Name': 'StorageType', 'Value': 'AllStorageTypes'}
+                      ],
+                      Statistic='Sum',
+                      Period=300,
+                      EvaluationPeriods=1,
+                      Threshold=1000,
+                      ComparisonOperator='GreaterThanThreshold',
+                      AlarmActions=[event['ResourceProperties']['SNSTopic']]
+                  )
+              return {'Status': 'SUCCESS'}
+
+  ReplicationAlarmCustomResource:
+    Type: Custom::ReplicationAlarmResource
+    Properties:
+      ServiceToken: !GetAtt CreateReplicationAlarmsFunction.Arn
+      SNSTopic: !Ref ReplicationAlertSNSTopic
