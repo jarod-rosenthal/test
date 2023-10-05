@@ -1,1 +1,1 @@
-aws-qpp-ar-terraform
+qpp-ar-sbx-replication-test-01
