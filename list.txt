@@ -1,1 +1,2 @@
 qpp-ar-sbx-replication-test-01
+qpp-ar-sbx-replication-test-02
