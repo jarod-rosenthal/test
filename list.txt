@@ -1,2 +1,3 @@
-qpp-ar-sbx-replication-test-01
-qpp-ar-sbx-replication-test-02
+qpp-ar-sbx-replication-test-01:375727523534
+qpp-ar-sbx-replication-test-02:375727523534
+qpp-ar-sbx-replication-test-03:933355666777
